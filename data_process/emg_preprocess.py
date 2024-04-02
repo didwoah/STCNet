@@ -200,11 +200,11 @@ def preprocess(opt):
         raise ValueError("Unsupported dataset type.")
     
     # Check if the output directory exists, and if not, create it
-    if not os.path.exists('./pkl/'):
-        os.makedirs('./pkl/', exist_ok=True)
+    if not os.path.exists('../pkl/'):
+        os.makedirs('../pkl/', exist_ok=True)
 
-    train.to_pickle('./pkl/train_{}.pkl'.format(opt.dataset))
-    test.to_pickle('./pkl/test_{}.pkl'.format(opt.dataset))
+    train.to_pickle('../pkl/train_{}.pkl'.format(opt.dataset))
+    test.to_pickle('../pkl/test_{}.pkl'.format(opt.dataset))
 
 def main():
     opt = parse_option()

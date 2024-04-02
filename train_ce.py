@@ -89,11 +89,6 @@ def parse_option():
     opt.tb_path = './save/CE/{}_tensorboard'.format(opt.dataset)
     opt.pkl_path = './save/CE/{}_pkl'.format(opt.dataset)
 
-    # iterations = opt.lr_decay_epochs.split(',')
-    # opt.lr_decay_epochs = list([])
-    # for it in iterations:
-    #     opt.lr_decay_epochs.append(int(it))
-
     opt.model_name = 'lr_{}_decay_{}_bsz_{}_tri_{}'.\
         format(opt.learning_rate, opt.weight_decay, opt.batch_size, opt.trial)
     

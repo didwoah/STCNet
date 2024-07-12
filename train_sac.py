@@ -14,7 +14,7 @@ from torchvision import transforms
 import torch.backends.cudnn as cudnn
 
 from dataset import Nina1Dataset, Nina2Dataset
-from networks.EMGHandNet import EMGHandNetMultiSupCon
+from networks.STCNet import STCNetSAC
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model, get_data
@@ -39,7 +39,7 @@ def parse_option():
 
     parser.add_argument('--print_freq', type=int, default=10,
                         help='print frequency')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=1024,
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=1,
                         help='num of workers to use')
@@ -59,7 +59,7 @@ def parse_option():
                         help='momentum')
 
     # model dataset
-    parser.add_argument('--model', type=str, default='EMGHandNet')
+    parser.add_argument('--model', type=str, default='STCNet')
     parser.add_argument('--dataset', type=str, default='nina1',
                         choices=['nina1', 'nina2', 'nina4'], help='dataset')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
@@ -159,7 +159,7 @@ def set_loader(opt):
         GaussianNoise(p=opt.prob),
         MagnitudeWarping(p=opt.prob),
         WaveletDecomposition(p=opt.prob),
-        Permute(data=opt.dataset)
+        Permute(data=opt.dataset, model=opt.model)
     ])
 
     if opt.dataset == 'nina1':
@@ -180,9 +180,9 @@ def set_loader(opt):
 def set_model(opt):
     criterion = MultiSupConLoss(temperature=(opt.temp, opt.temp), gamma=opt.gamma)
     if opt.sampled:
-        model = EMGHandNetMultiSupCon(data = f'{opt.dataset}_sampled')
+        model = STCNetSAC(data = f'{opt.dataset}_sampled')
     else:
-        model = EMGHandNetMultiSupCon(data = opt.dataset)
+        model = STCNetSAC(data = opt.dataset)
 
     # enable synchronized Batch Normalization
     if opt.syncBN:

@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from dataset import Nina1Dataset, Nina2Dataset  # Update this according to your dataset classes
-from networks.EMGHandNet import EMGHandNetCE  # Update this with your model class
+from networks.STCNet import STCNetCE  # Update this with your model class
 from util import AccuracyMeter, get_data
 import argparse
 import os
@@ -17,7 +17,7 @@ def parse_option():
 
 def load_model(model_path, dataset, sampled):
 
-    model = EMGHandNetCE(data=f"{dataset}{'_sampled' if sampled else ''}")
+    model = STCNetCE(data=f"{dataset}{'_sampled' if sampled else ''}")
     model.load_state_dict(torch.load(model_path)['model'])
     
     if torch.cuda.is_available():
@@ -46,9 +46,9 @@ def main():
     _, test = get_data(opt.dataset, -1)
 
     if opt.dataset == 'nina1':
-        test_dataset = Nina1Dataset(test, mode='labels', model='EMGHandNet')
+        test_dataset = Nina1Dataset(test, mode='labels', model='STCNet')
     elif opt.dataset in ['nina2', 'nina4']:
-        test_dataset = Nina2Dataset(test, sampled=opt.sampled, mode='labels', model='EMGHandNet')
+        test_dataset = Nina2Dataset(test, sampled=opt.sampled, mode='labels', model='STCNet')
     else:
         raise ValueError(f"Unsupported dataset type: {opt.dataset}")
 

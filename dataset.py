@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 class Nina1Dataset(Dataset):
-    def __init__(self, dataframe, mode = 'labels', model = 'EMGHandNet', transform = None):
+    def __init__(self, dataframe, mode = 'labels', model = 'STCNet', transform = None):
         self.dataframe = dataframe
         self.mode = mode
         self.transform = transform
@@ -37,7 +37,9 @@ class Nina1Dataset(Dataset):
             if self.model == 'EMGHandNet':
                 inputs = torch.tensor(np.transpose(data.reshape((25,20,10)),(0,2,1)),dtype=torch.float)
             elif self.model == 'EvCNN':
-                 inputs = torch.tensor(data.reshape((25,20,10)), dtype=torch.float)
+                inputs = torch.tensor(data.reshape((25,20,10)), dtype=torch.float)
+            elif self.model == 'STCNet':
+                inputs = torch.tensor(data.reshape((25,20,10)), dtype=torch.float)
         
         if self.mode == 'labels':
             return inputs, labels
@@ -85,6 +87,8 @@ class Nina2Dataset(Dataset):
                 inputs = torch.tensor(np.transpose(data.reshape((25,Ts,12)),(0,2,1)),dtype=torch.float)
             elif self.model == 'EvCNN':
                  inputs = torch.tensor(data.reshape((25,Ts,12)), dtype=torch.float)
+            elif self.model == 'STCNet':
+                inputs = torch.tensor(data.reshape((25,Ts,12)), dtype=torch.float)
         
         if self.mode == 'labels':
             return inputs, labels

@@ -100,14 +100,17 @@ class WaveletDecomposition(object):
         return torch.tensor(np.array(reconstructed_data)).T
     
 class Permute(object):
-    def __init__(self, data):
+    def __init__(self, data, model):
         if data in ['nina1']:
             self.channel = 10
         elif data in ['nina2', 'nina4']:
             self.channel = 12
+        self.model = model
     def __call__(self, x):
-        out = np.transpose(x.reshape((25, 20, self.channel)),(0,2,1))
-        return out.float().clone().detach()
+        x = x.reshape((25, 20, self.channel))
+        if self.model == 'EMGHandNet':
+            x = np.transpose(x,(0,2,1))
+        return x.float().clone().detach()
     
 
 if __name__ == '__main__':

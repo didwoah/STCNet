@@ -46,18 +46,16 @@ class ConvLayer(nn.Module):
         self.actv4 = nn.Tanh()
         self.dropout4 = nn.Dropout(0.2093)
         self.block4 = nn.Sequential(self.conv4, self.bat4, self.actv4, self.dropout4)
-
-        self.relu = nn.ReLU()
         self.flatten = nn.Flatten()
 
-    def forward(self, x):
+        self.relu = nn.ReLU()
 
+    def forward(self, x):
         out1 = self.block1(x)
         out2 = self.block2(out1)
         out3 = self.block3(out2)
         out4 = self.block4(out3)
         out = self.flatten(self.relu(out4))
-
         return out
     
 class TimeDistributed(nn.Module):

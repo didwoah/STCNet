@@ -142,7 +142,6 @@ def preprocess(opt):
             for d in directories:
                 d_path = os.path.join(root,d)
                 dir_list.append(d)
-                print(d)
                 
             for file in files:
                 file_path = os.path.join(root,file)
@@ -153,8 +152,6 @@ def preprocess(opt):
                     file_type.append("E2")
                 else:
                     file_type.append("E1")
-                print(file_path)
-
 
         train = pd.DataFrame(columns=['stimulus','subject','normalized','sampled_normalized'])
         test = pd.DataFrame(columns=['stimulus','subject','normalized','sampled_normalized'])

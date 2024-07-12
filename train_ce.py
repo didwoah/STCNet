@@ -16,7 +16,7 @@ import torch.backends.cudnn as cudnn
 from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR
 
 from dataset import Nina1Dataset, Nina2Dataset
-from networks.EMGHandNet import EMGHandNetCE
+from networks.STCNet import STCNetCE
 from util import AverageMeter, AccuracyMeter
 from util import save_model, get_data
 from augmentations import GaussianNoise, MagnitudeWarping, WaveletDecomposition, Permute
@@ -55,7 +55,7 @@ def parse_option():
     parser.add_argument('--beta2', type=float, default=0.999)
 
     # model dataset
-    parser.add_argument('--model', type=str, default='EMGHandNet', help='model')
+    parser.add_argument('--model', type=str, default='STCNet', help='model')
     parser.add_argument('--encoder', type=str, default=None, help='path to encoder weights')
     parser.add_argument('--freeze', action='store_true', help='freeze encoder weights')
     parser.add_argument('--dataset', type=str, default='nina1',
@@ -143,7 +143,7 @@ def set_loader(opt):
     train, test = get_data(opt.dataset, opt.kfold)
 
     if opt.dataset == 'nina1':
-        test_dataset = Nina1Dataset(test)
+        test_dataset = Nina1Dataset(test, model='STCNet')
         if opt.aug:
             train_transform = transforms.Compose([
                 GaussianNoise(p = opt.prob),
@@ -151,11 +151,11 @@ def set_loader(opt):
                 WaveletDecomposition(p = opt.prob),
                 Permute(data = opt.dataset)
                 ])
-            train_dataset = Nina1Dataset(train, transform = train_transform)
+            train_dataset = Nina1Dataset(train, model='STCNet', transform = train_transform)
         else:
-            train_dataset = Nina1Dataset(train)
+            train_dataset = Nina1Dataset(train, model='STCNet')
     elif opt.dataset in ['nina2', 'nina4']:
-        test_dataset = Nina2Dataset(test, sampled = opt.sampled, mode='labels', model='EMGHandNet')
+        test_dataset = Nina2Dataset(test, sampled = opt.sampled, mode='labels', model='STCNet')
         if opt.aug:
             train_transform = transforms.Compose([
                 GaussianNoise(p = opt.prob),
@@ -163,9 +163,9 @@ def set_loader(opt):
                 WaveletDecomposition(p = opt.prob),
                 Permute(data = opt.dataset)
                 ])
-            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='EMGHandNet', transform = train_transform)
+            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='STCNet', transform = train_transform)
         else:
-            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='EMGHandNet')
+            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='STCNet')
     else:
         raise ValueError(opt.dataset)
 
@@ -178,12 +178,12 @@ def set_loader(opt):
 def set_model(opt):
     criterion = torch.nn.CrossEntropyLoss()
     if opt.sampled:
-        model = EMGHandNetCE(data = f'{opt.dataset}_sampled')
+        model = STCNetCE(data = f'{opt.dataset}_sampled')
     else:
-        model = EMGHandNetCE(data = opt.dataset)
+        model = STCNetCE(data = opt.dataset)
     if opt.encoder is not None:
-        supcon = torch.load(opt.encoder)
-        model.encoder.load_state_dict({k.replace('encoder.', ''): v for k, v in supcon['model'].items() if 'encoder' in k})
+        pre_trained = torch.load(opt.encoder)
+        model.encoder.load_state_dict({k.replace('encoder.', '', 1): v for k, v in pre_trained['model'].items() if 'encoder' in k})
         if opt.freeze:
             for param in model.encoder.parameters():
                 param.requires_grad = False

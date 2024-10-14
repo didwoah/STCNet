@@ -83,9 +83,6 @@ def parse_option():
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
     
-    parser.add_argument('--seg', type=int, default=25,
-                        help='seg')
-    
 
     opt = parser.parse_args()
     stc_cond = ''

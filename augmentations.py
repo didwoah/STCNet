@@ -78,7 +78,7 @@ class WaveletDecomposition(object):
         if not generate_random_boolean(self.p):
             return x
         coeffs_rows = []
-        for i in range(x.shape[1]):  # 각 열에 대해 DWT 수행
+        for i in range(x.shape[1]):
             # Perform DWT for the current dimension
             coeffs = pywt.wavedec(x[:, i].numpy(), self.wavelet, level = self.level)
             # coeffs is list [cA, cD(level max), ..., cD(level 1)]

@@ -15,10 +15,10 @@ from torchvision import transforms
 import torch.backends.cudnn as cudnn
 from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR
 
-from dataset import Nina1Dataset, Nina2Dataset
-from networks.STCNet import STCNetCE
+from dataset import NinaDataset
+# from networks.STCNet import STCNetCE
 from util import AverageMeter, AccuracyMeter
-from util import save_model, get_data
+from util import save_model, get_data, get_model
 from augmentations import GaussianNoise, MagnitudeWarping, WaveletDecomposition, Permute
 
 # seed
@@ -41,7 +41,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=1,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=200,
+    parser.add_argument('--epochs', type=int, default=100,
                         help='number of training epochs')
 
     # optimization
@@ -55,13 +55,13 @@ def parse_option():
     parser.add_argument('--beta2', type=float, default=0.999)
 
     # model dataset
-    parser.add_argument('--model', type=str, default='STCNet', help='model')
+    parser.add_argument('--model', type=str, default='STCNet', 
+                        choices=['STCNet', 'baseline'], help='model')
+    parser.add_argument('--stc', action='store_true')
     parser.add_argument('--encoder', type=str, default=None, help='path to encoder weights')
     parser.add_argument('--freeze', action='store_true', help='freeze encoder weights')
     parser.add_argument('--dataset', type=str, default='nina1',
                         choices=['nina1', 'nina2', 'nina4'], help='dataset')
-    parser.add_argument('--sampled', action='store_true',
-                        help='using sampled dataset (10000 -> 500)')
 
     # augmentations
     parser.add_argument('--aug', action='store_true',
@@ -82,12 +82,18 @@ def parse_option():
                         help='warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
+    
+    parser.add_argument('--seg', type=int, default=25,
+                        help='seg')
+    
 
     opt = parser.parse_args()
-
-    opt.model_path = './save/CE/{}_models'.format(opt.dataset)
-    opt.tb_path = './save/CE/{}_tensorboard'.format(opt.dataset)
-    opt.pkl_path = './save/CE/{}_pkl'.format(opt.dataset)
+    stc_cond = ''
+    if opt.stc and opt.model == 'baseline':
+        stc_cond = 'stc'
+    opt.model_path = './save/CE/{}_{}_{}models'.format(opt.dataset, opt.model, stc_cond)
+    opt.tb_path = './save/CE/{}_{}_{}tensorboard'.format(opt.dataset, opt.model, stc_cond)
+    opt.pkl_path = './save/CE/{}_{}_{}pkl'.format(opt.dataset, opt.model, stc_cond)
 
     opt.model_name = 'lr_{}_decay_{}_bsz_{}_tri_{}'.\
         format(opt.learning_rate, opt.weight_decay, opt.batch_size, opt.trial)
@@ -105,23 +111,6 @@ def parse_option():
 
     if opt.aug:
         opt.model_name = '{}_aug_{}'.format(opt.model_name, opt.prob)
-
-    if opt.sampled:
-        opt.model_name = '{}_sam'.format(opt.model_name)
-
-    # # warm-up for large-batch training,
-    # if opt.batch_size > 256:
-    #     opt.warm = True
-    # if opt.warm:
-    #     opt.model_name = '{}_warm'.format(opt.model_name)
-    #     opt.warmup_from = 0.01
-    #     opt.warm_epochs = 10
-    #     if opt.cosine:
-    #         eta_min = opt.learning_rate * (opt.lr_decay_rate ** 3)
-    #         opt.warmup_to = eta_min + (opt.learning_rate - eta_min) * (
-    #                 1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
-    #     else:
-    #         opt.warmup_to = opt.learning_rate
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -142,32 +131,17 @@ def set_loader(opt):
 
     train, test = get_data(opt.dataset, opt.kfold)
 
-    if opt.dataset == 'nina1':
-        test_dataset = Nina1Dataset(test, model='STCNet')
-        if opt.aug:
-            train_transform = transforms.Compose([
-                GaussianNoise(p = opt.prob),
-                MagnitudeWarping(p = opt.prob),
-                WaveletDecomposition(p = opt.prob),
-                Permute(data = opt.dataset)
-                ])
-            train_dataset = Nina1Dataset(train, model='STCNet', transform = train_transform)
-        else:
-            train_dataset = Nina1Dataset(train, model='STCNet')
-    elif opt.dataset in ['nina2', 'nina4']:
-        test_dataset = Nina2Dataset(test, sampled = opt.sampled, mode='labels', model='STCNet')
-        if opt.aug:
-            train_transform = transforms.Compose([
-                GaussianNoise(p = opt.prob),
-                MagnitudeWarping(p = opt.prob),
-                WaveletDecomposition(p = opt.prob),
-                Permute(data = opt.dataset)
-                ])
-            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='STCNet', transform = train_transform)
-        else:
-            train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='labels', model='STCNet')
+    test_dataset = NinaDataset(test, dataset=opt.dataset, model=opt.model)
+    if opt.aug:
+        train_transform = transforms.Compose([
+            GaussianNoise(p = opt.prob),
+            MagnitudeWarping(p = opt.prob),
+            WaveletDecomposition(p = opt.prob),
+            Permute(data = opt.dataset)
+            ])
+        train_dataset = NinaDataset(train, dataset=opt.dataset, model=opt.model, transform = train_transform)
     else:
-        raise ValueError(opt.dataset)
+        train_dataset = NinaDataset(train, dataset=opt.dataset, model=opt.model)
 
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle = True)
     test_loader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle = False)
@@ -177,20 +151,15 @@ def set_loader(opt):
 
 def set_model(opt):
     criterion = torch.nn.CrossEntropyLoss()
-    if opt.sampled:
-        model = STCNetCE(data = f'{opt.dataset}_sampled')
-    else:
-        model = STCNetCE(data = opt.dataset)
+    model = get_model(opt)
+
     if opt.encoder is not None:
-        pre_trained = torch.load(opt.encoder)
+        pre_trained = torch.load(opt.encoder, weights_only=False)
         model.encoder.load_state_dict({k.replace('encoder.', '', 1): v for k, v in pre_trained['model'].items() if 'encoder' in k})
         if opt.freeze:
             for param in model.encoder.parameters():
                 param.requires_grad = False
 
-    # enable synchronized Batch Normalization
-    # if opt.syncBN:
-    #     model = apex.parallel.convert_syncbn_model(model)
 
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
@@ -211,7 +180,7 @@ def train(train_loader, test_loader, model, criterion, optimizer, epoch, opt):
     val_acc = AccuracyMeter()
 
     model.train()
-    for idx, (inputs, labels) in enumerate(train_loader):
+    for idx, (inputs, labels, _) in enumerate(train_loader):
 
         if torch.cuda.is_available():
             inputs = inputs.cuda(non_blocking=True)
@@ -233,7 +202,7 @@ def train(train_loader, test_loader, model, criterion, optimizer, epoch, opt):
 
     model.eval()  # Set model to evaluation mode
     with torch.no_grad():
-        for idx, (inputs, labels) in enumerate(test_loader):
+        for idx, (inputs, labels, _) in enumerate(test_loader):
             if torch.cuda.is_available():
                 inputs = inputs.cuda(non_blocking=True)
                 labels = labels.cuda(non_blocking=True)
@@ -298,7 +267,7 @@ def main():
         train_loss, val_loss, train_acc, val_acc = train(train_loader, test_loader, model, criterion, optimizer, epoch, opt)
         scheduler.step()
         time2 = time.time()
-        print('epoch {}, total time {:.2f} train_loss {:.2f} val_loss {:.2f} train_acc {:.2f} val_acc {:.2f}'.format(epoch, time2 - time1, train_loss, val_loss, train_acc, val_acc))
+        print('epoch {}, total time {:.2f} train_loss {:.2f} val_loss {:.2f} train_acc {:.2f} val_acc {:.2f}'.format(epoch, time2 - time1, train_loss, val_loss, train_acc*100, val_acc*100))
 
         # tensorboard logger
         logger.log_value('train_loss', train_loss, epoch)
@@ -322,7 +291,7 @@ def main():
     # save the best model
     print('best_acc: {}'.format(best_acc))
     save_file = os.path.join(
-        opt.save_folder, f'best_model_acc{best_acc}.pth')
+        opt.save_folder, f'best_model.pth')
     save_model(best_model, optimizer, opt, opt.epochs, save_file)
 
     # save the figure pkl
@@ -334,7 +303,8 @@ def main():
             'train_losses': train_losses, 
             'val_losses': val_losses,
             'train_accs': train_accs,
-            'val_accs': val_accs}, f)
+            'val_accs': val_accs,
+            'best_acc' : best_acc}, f)
 
 
 if __name__ == '__main__':

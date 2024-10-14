@@ -3,125 +3,26 @@ import torch.nn.functional as F
 import torch
 import copy
 import math
+from networks.utils import STCBlock, TimeDistributed
 
 NL = 200
 SL = 25
 
 CFG = {
     'nina1': (10, 20, 96, 52, 27), 
-    'nina2_sampled': (12, 20, 96, 49, 40),
-    'nina4_sampled': (12, 20, 96, 52, 10),
+    'nina2': (12, 20, 96, 49, 40),
+    'nina4': (12, 20, 96, 52, 10),
     }
 
-def ConvBlock3x3(in_ch, out_ch, stride):
-    return nn.Conv1d(in_channels = in_ch, out_channels = out_ch, kernel_size = 3, stride = stride, padding = 1, padding_mode = 'zeros')
-    
-def ConvBlock1x1(in_ch, out_ch, stride):
-    return nn.Conv1d(in_channels = in_ch, out_channels = out_ch, kernel_size = 1, stride = stride, padding = 0)
-   
-class ResidualBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, stride=1):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = ConvBlock3x3(in_ch, out_ch, stride)
-        self.bat1 = nn.BatchNorm1d(out_ch)
-        self.drop1 = nn.Dropout(0.3)
-        self.actv1 = nn.ReLU()
-        self.conv2 = ConvBlock3x3(out_ch, out_ch, 1)
-        self.bat2 = nn.BatchNorm1d(out_ch)
-        self.downsample = None
-        if stride != 1 or in_ch != out_ch:
-            self.downsample = nn.Sequential(
-                ConvBlock1x1(in_ch, out_ch, stride),
-                nn.BatchNorm1d(out_ch)
-            )
-    def forward(self, x):
-        identity = x
-        x = self.conv1(x)
-        x = self.bat1(x)
-        x = self.actv1(x)
-        x = self.drop1(x)
-        x = self.conv2(x)
-        x = self.bat2(x)
-        if self.downsample is not None:
-            identity = self.downsample(identity)
-        x = x + identity
-        return x
-    
-class ConvLayer(nn.Module):
-    def __init__(self, in_ch, in_ts, kaiming_init = False):
-        super(ConvLayer, self).__init__()
-        self.temporal_conv = TemporalConv(in_ch, in_ts)
-        self.spatial_conv = SpatialConv(in_ch, in_ts)
-
-    def forward(self, x):
-        out1 = self.temporal_conv(x)
-        out2 = self.spatial_conv(x)
-        out = torch.cat((out1, out2), dim=1)
-        return out
-    
-class TemporalConv(nn.Module):
-    def __init__(self, in_ch, in_ts, kaiming_init = False):
-        super(TemporalConv, self).__init__()
-        self.block1 = ResidualBlock(in_ch, 16, 1)
-        self.block2 = ResidualBlock(16, 32, 2)
-        self.block3 = ResidualBlock(32, 64, 2)
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(in_ts * 16, in_ts * 8),
-            nn.ReLU(),
-            nn.Linear(in_ts * 8, 64)
-        )
-    def forward(self, x):
-        x_ = x.permute(0,2,1)
-        x_ = self.block1(x_)
-        x_ = self.block2(x_)
-        x_ = self.block3(x_)
-        out = self.fc(x_)
-        return out
-    
-class SpatialConv(nn.Module):
-    def __init__(self, in_ch, in_ts, kaiming_init = False):
-        super(SpatialConv, self).__init__()
-        self.block1 = ResidualBlock(in_ts, 16, 1)
-        self.block2 = ResidualBlock(16, 32, 2)
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear((in_ch + 2) * 16, (in_ch + 2) * 8),
-            nn.ReLU(),
-            nn.Linear((in_ch + 2) * 8, 32)
-        )
-    def forward(self, x):
-        x = torch.concat((x, x[:, :, :2]), dim=2)
-        x = self.block1(x)
-        x = self.block2(x)
-        out = self.fc(x)
-        return out
-    
-class TimeDistributed(nn.Module):
-    def __init__(self, module, batch_first = False):
-        super(TimeDistributed, self).__init__()
-        self.module = module
-        self.batch_first = batch_first
-
-    def forward(self, x):
-        # x size: batch, steps, channels, length
-        batch, steps, channels, length = x.size()
-        x_reshape = x.contiguous().view(batch * steps, channels, length)
-        out_ = self.module(x_reshape)
-        out = out_.view(batch, steps, -1)
-        if self.batch_first is False:
-            out = out.permute(1, 0, 2)
-        return out
-
 class Encoder(nn.Module):
-    def __init__(self, in_ch, in_ts, out_channels, transformer, kaiming_init = False):
+    def __init__(self, in_ch, in_ts, out_channels, transformer):
         super(Encoder, self).__init__()
-        self.stconv = TimeDistributed(ConvLayer(in_ch, in_ts, kaiming_init = kaiming_init), batch_first = True)
+        self.stconv = TimeDistributed(STCBlock(in_ch, in_ts), batch_first = True)
         self.transformer = transformer
         if transformer:
             self.longterm_encoder = TransformerLayer(out_channels)
         else:
-            self.longterm_encoder = nn.LSTM(96, NL, num_layers = 2, batch_first = True, dropout = 0.2, bidirectional = True)
+            self.longterm_encoder = nn.LSTM(out_channels, NL, num_layers = 2, batch_first = True, dropout = 0.2, bidirectional = True)
         self.flat = nn.Flatten()
     def forward(self, x):
         cout = self.stconv(x)
@@ -168,13 +69,13 @@ class PositionalEncoding(nn.Module):
         return x
 
 class STCNetCE(nn.Module):
-    def __init__(self, data = 'nina1', transformer = False, kaiming_init = False):
+    def __init__(self, data = 'nina1', transformer = False):
         super(STCNetCE, self).__init__()
         in_ch, in_ts, out_channels, cdn, _ = CFG[data]
-        self.encoder = Encoder(in_ch, in_ts, out_channels, transformer, kaiming_init)
+        self.encoder = Encoder(in_ch, in_ts, out_channels, transformer)
         fc_in = SL * 2 * NL
         if transformer:
-            fc_in = 96*25
+            fc_in = out_channels*25
         self.fc = nn.Sequential(
             nn.Linear(fc_in, 512),
             nn.BatchNorm1d(512),
@@ -187,13 +88,13 @@ class STCNetCE(nn.Module):
         return out
     
 class STCNetSAC(nn.Module):
-    def __init__(self, data = 'nina1', transformer = False, head = 'mlp', label_feat_dim = 128, subject_feat_dim = 128, kaiming_init = False):
+    def __init__(self, dataset = 'nina1', transformer = False, head = 'mlp', label_feat_dim = 128, subject_feat_dim = 128):
         super(STCNetSAC, self).__init__()
-        in_ch, in_ts, out_channels, _, _ = CFG[data]
-        self.encoder = Encoder(in_ch, in_ts, out_channels, transformer, kaiming_init)
+        in_ch, in_ts, out_channels, _, _ = CFG[dataset]
+        self.encoder = Encoder(in_ch, in_ts, out_channels, transformer)
         dim_in = SL * 2 * NL
         if transformer:
-            dim_in = 96*25
+            dim_in = out_channels*25
         if head == 'linear':
             self.label_head = nn.Linear(dim_in, label_feat_dim)
             self.subject_head = nn.Linear(dim_in, subject_feat_dim)
@@ -219,5 +120,5 @@ class STCNetSAC(nn.Module):
         return label_feat, subject_feat  
 
 if __name__ == '__main__':
-    model = STCNetCE(data = 'nina1')
+    model = STCNetSAC(data = 'nina1')
     print(model)

@@ -13,13 +13,13 @@ import torch
 from torchvision import transforms
 import torch.backends.cudnn as cudnn
 
-from dataset import Nina1Dataset, Nina2Dataset
+from dataset import NinaDataset
 from networks.STCNet import STCNetSAC
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model, get_data
 from augmentations import GaussianNoise, MagnitudeWarping, WaveletDecomposition, Permute
-from losses import MultiSupConLoss
+from losses import SACLoss
 
 
 # seed
@@ -43,7 +43,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=1,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=200,
+    parser.add_argument('--epochs', type=int, default=100,
                         help='number of training epochs')
 
     # optimization
@@ -63,8 +63,6 @@ def parse_option():
     parser.add_argument('--dataset', type=str, default='nina1',
                         choices=['nina1', 'nina2', 'nina4'], help='dataset')
     parser.add_argument('--data_folder', type=str, default=None, help='path to custom dataset')
-    parser.add_argument('--sampled', action='store_true',
-                        help='using sampled dataset (10000 -> 500)')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -99,9 +97,9 @@ def parse_option():
     # set the path according to the environment
     if opt.data_folder is None:
         opt.data_folder = './datasets/'
-    opt.model_path = './save/Multi/{}_models'.format(opt.dataset)
-    opt.tb_path = './save/Multi/{}_tensorboard'.format(opt.dataset)
-    opt.pkl_path = './save/Multi/{}_pkl'.format(opt.dataset)
+    opt.model_path = './save/SAC/{}_models'.format(opt.dataset)
+    opt.tb_path = './save/SAC/{}_tensorboard'.format(opt.dataset)
+    opt.pkl_path = './save/SAC/{}_pkl'.format(opt.dataset)
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
@@ -116,9 +114,6 @@ def parse_option():
     
     if opt.cosine:
         opt.model_name = '{}_cos'.format(opt.model_name)
-
-    if opt.sampled:
-        opt.model_name = '{}_samp'.format(opt.model_name)
 
 
     # warm-up for large-batch training,
@@ -162,13 +157,7 @@ def set_loader(opt):
         Permute(data=opt.dataset, model=opt.model)
     ])
 
-    if opt.dataset == 'nina1':
-        train_dataset = Nina1Dataset(train, mode='multi', transform=TwoCropTransform(train_transform))
-    elif opt.dataset in ['nina2', 'nina4']:
-        train_dataset = Nina2Dataset(train, sampled = opt.sampled, mode='multi', transform=TwoCropTransform(train_transform))
-    else:
-        raise ValueError(opt.dataset)
-
+    train_dataset = NinaDataset(train, dataset=opt.dataset, transform=TwoCropTransform(train_transform))
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
@@ -178,11 +167,8 @@ def set_loader(opt):
 
 
 def set_model(opt):
-    criterion = MultiSupConLoss(temperature=(opt.temp, opt.temp), gamma=opt.gamma)
-    if opt.sampled:
-        model = STCNetSAC(data = f'{opt.dataset}_sampled')
-    else:
-        model = STCNetSAC(data = opt.dataset)
+    criterion = SACLoss(temperature=(opt.temp, opt.temp), gamma=opt.gamma)
+    model = STCNetSAC(dataset = opt.dataset)
 
     # enable synchronized Batch Normalization
     if opt.syncBN:

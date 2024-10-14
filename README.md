@@ -21,7 +21,6 @@ python train_sac.py --dataset nina1 --gamma 0.3 --cosine
 python train_ce.py --dataset nina1 --cosine --encoder "put your result pth file from train_multi.py"
 ```
 
-if you run train file on nina2 or nina4, you add '--sampled' argumentation!
 
 ### how to test
 
